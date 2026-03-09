@@ -64,23 +64,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Append a user message and stream the assistant's response.
+     * Hybrid flow:
+     *
+     * 1. Kotlin classifier checks the question first (no LLM cost).
+     *    - UnknownIntent → instant canned refusal, done.
+     *    - KnownIntent   → proceed to step 2.
+     *
+     * 2. LLM (Pass 1 only) extracts intent + arguments from natural language.
+     *    A deterministic guardrail (ToolCallRouter.resolve) corrects any mismatch.
+     *
+     * 3. AppFunctions executes the resolved tool call and returns structured data.
+     *
+     * 4. Kotlin formatter (AppFunctions.formatAnswer) builds the final answer.
+     *    No second LLM pass — answers are always accurate.
      */
     fun sendMessage(userText: String) {
         if (userText.isBlank()) return
         if (_isGenerating.value) return
 
-        // Append user message to history
-        val userMsg = ChatMessage(role = Role.USER, text = userText.trim())
+        val trimmed = userText.trim()
+
+        // Append user message
+        val userMsg = ChatMessage(role = Role.USER, text = trimmed)
         var currentList = _messages.value + userMsg
         _messages.value = currentList
 
-        // Add placeholder assistant message that will be updated as tokens stream in
-        var assistantMsg = ChatMessage(
-            role = Role.ASSISTANT,
-            text = "",
-            isStreaming = true,
-        )
+        // Placeholder assistant message
+        var assistantMsg = ChatMessage(role = Role.ASSISTANT, text = "", isStreaming = true)
         currentList = currentList + assistantMsg
         _messages.value = currentList
 
@@ -88,156 +98,140 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val prompt = AIService.buildPrompt(currentList.dropLast(1))
-                val accumulated = java.lang.StringBuilder()
+                // ── Step 1: Kotlin classifier ────────────────────────────────────
+                val intent = ToolCallRouter.classify(trimmed)
 
-                android.util.Log.d("ChatViewModel", "Calling AIService.sendMessage...")
+                if (intent is ToolCallRouter.UnknownIntent) {
+                    // Outside merchant domain — no LLM call, instant refusal
+                    android.util.Log.d("ChatViewModel", "UnknownIntent for: $trimmed")
+                    setFinalMessage(currentList, assistantMsg,
+                        "I can only help with your YesPayBiz business data.\n" +
+                        "Try asking about your transactions, collections, or settlement status.")
+                    return@launch
+                }
+
+                val classified = intent as ToolCallRouter.KnownIntent
+
+                // Handle navigation immediately — no data fetch needed
+                if (classified.functionName.startsWith("navigate")) {
+                    setFinalMessage(currentList, assistantMsg,
+                        "Opening ${classified.functionName.removePrefix("navigateTo")}…")
+                    _navigationEvent.emit(classified.functionName)
+                    return@launch
+                }
+
+                // ── Step 2: LLM — intent + argument extraction only ───────────────
+                // Show thinking state while LLM runs
+                updateMessage(currentList, assistantMsg, "Thinking…", streaming = true)
+
+                val prompt = AIService.buildPrompt(trimmed)
+                val accumulated = StringBuilder()
+
                 AIService.sendMessage(prompt) { partial ->
                     accumulated.append(partial)
-                    
-                    // Cleanup common markdown artifacts immediately before checking logic
-                    val currentText = accumulated.toString().trim()
-                    
-                    // Hide output from UI if we detect it's building a JSON object or markdown block
-                    val isHiddenJSON = currentText.startsWith("{") 
-                                    || currentText.startsWith("```json") 
-                                    || currentText.startsWith("```")
-                    
-                    _messages.value = currentList.map { msg ->
-                        if (msg.id == assistantMsg.id) {
-                            if (isHiddenJSON) {
-                                msg.copy(text = "Thinking...", isStreaming = true)
-                            } else {
-                                msg.copy(text = currentText, isStreaming = true)
-                            }
-                        } else msg
+                    // Keep "Thinking…" visible — don't stream raw JSON to the user
+                }
+
+                android.util.Log.d("ChatViewModel", "LLM raw output: ${accumulated.toString().take(300)}")
+
+                // ── Step 3: Parse LLM output, apply guardrail ─────────────────────
+                val resolvedCall = parseLlmToolCall(accumulated.toString(), trimmed)
+                    ?: run {
+                        // LLM failed to emit valid JSON — fall back to the classifier result
+                        android.util.Log.w("ChatViewModel", "LLM did not emit valid JSON, using classifier result")
+                        ToolCallRouter.ResolvedToolCall(classified.functionName, classified.arguments)
                     }
-                }
 
-                android.util.Log.d("ChatViewModel", "AIService.sendMessage returned. Accumulated length=${accumulated.length}")
-                android.util.Log.d("ChatViewModel", "Raw response: ${accumulated.toString().take(300)}")
+                android.util.Log.d("ChatViewModel", "Resolved: ${resolvedCall.functionName} args=${resolvedCall.arguments}")
 
-                // Clean up the final text by stripping markdown JSON wrappers if the model hallucinated them
-                var firstPassText = accumulated.toString().trim()
-                if (firstPassText.startsWith("```json")) {
-                    firstPassText = firstPassText.removePrefix("```json").removeSuffix("```").trim()
-                } else if (firstPassText.startsWith("```")) {
-                    firstPassText = firstPassText.removePrefix("```").removeSuffix("```").trim()
-                }
-                
-                // Tool Call Detection & Execution
-                if (firstPassText.startsWith("{") && firstPassText.endsWith("}")) {
-                    try {
-                        val element = com.google.gson.JsonParser.parseString(firstPassText).asJsonObject
-                        if (element.has("type") && element.get("type").asString == "tool_call") {
-                            val modelFuncName = element.get("name").asString
-                            val argsElement = element.get("arguments")
-                            val modelArgsMap: Map<String, Any> = if (argsElement != null && argsElement.isJsonObject) {
-                                com.google.gson.Gson().fromJson<Map<String, Any>>(argsElement, object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type) ?: emptyMap()
-                            } else {
-                                emptyMap()
-                            }
-                            val resolvedCall = ToolCallRouter.resolve(
-                                userQuestion = userText.trim(),
-                                modelFunctionName = modelFuncName,
-                                modelArguments = modelArgsMap
-                            )
-                            val funcName = resolvedCall.functionName
-                            val argsMap = resolvedCall.arguments
-                            if (modelFuncName != funcName) {
-                                android.util.Log.w(
-                                    "ChatViewModel",
-                                    "Tool call corrected: model=$modelFuncName -> resolved=$funcName, user='${userText.trim()}'"
-                                )
-                            }
+                // ── Step 4: Execute tool ──────────────────────────────────────────
+                updateMessage(currentList, assistantMsg, "Fetching data…", streaming = true)
+                val funcResult = AppFunctions.executeFunction(resolvedCall.functionName, resolvedCall.arguments)
+                android.util.Log.d("ChatViewModel", "Function result: $funcResult")
 
-                            if (funcName.startsWith("navigate")) {
-                                // UI Navigation Task
-                                _messages.value = currentList.map { msg ->
-                                    if (msg.id == assistantMsg.id) {
-                                        msg.copy(text = "Navigating to ${funcName.removePrefix("navigateTo")}...", isStreaming = false)
-                                    } else msg
-                                }
-                                _navigationEvent.emit(funcName)
-                                _isGenerating.value = false
-                                return@launch
-                            }
+                // ── Step 5: Kotlin formatter → final answer (no 2nd LLM pass) ────
+                val answer = AppFunctions.formatAnswer(resolvedCall.functionName, funcResult)
+                setFinalMessage(currentList, assistantMsg, answer)
 
-                            // Data Query Task
-                            _messages.value = currentList.map { msg ->
-                                if (msg.id == assistantMsg.id) {
-                                    msg.copy(text = "Fetching data via $funcName...", isStreaming = true)
-                                } else msg
-                            }
-
-                            val funcResult = AppFunctions.executeFunction(funcName, argsMap)
-                            android.util.Log.d("ChatViewModel", "Function $funcName returned: $funcResult")
-
-                            // 2nd Pass: Build a clean prompt WITHOUT tool-calling instructions
-                            val finalPrompt = AIService.buildSecondPassPrompt(
-                                userQuestion = userText.trim(),
-                                funcName = funcName,
-                                funcResult = funcResult
-                            )
-                            
-                            assistantMsg = ChatMessage(role = Role.ASSISTANT, text = "", isStreaming = true)
-                            currentList = currentList.dropLast(1) + assistantMsg
-                            _messages.value = currentList
-
-                            val finalAccumulated = java.lang.StringBuilder()
-                            
-                            AIService.sendMessage(finalPrompt) { partial ->
-                                finalAccumulated.append(partial)
-                                _messages.value = currentList.map { msg ->
-                                    if (msg.id == assistantMsg.id) {
-                                        msg.copy(text = finalAccumulated.toString().trim(), isStreaming = true)
-                                    } else msg
-                                }
-                            }
-
-                            // Clean up the second pass response (strip backticks if model wraps them)
-                            var secondPassText = finalAccumulated.toString().trim()
-                            if (secondPassText.startsWith("```")) {
-                                secondPassText = secondPassText.removePrefix("```json")
-                                    .removePrefix("```").removeSuffix("```").trim()
-                            }
-                            android.util.Log.d("ChatViewModel", "Second pass final text: $secondPassText")
-
-                            _messages.value = currentList.map { msg ->
-                                if (msg.id == assistantMsg.id) {
-                                    msg.copy(text = secondPassText, isStreaming = false)
-                                } else msg
-                            }
-                            _isGenerating.value = false
-                            return@launch
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.d("ChatViewModel", "JSON parse failed, treating as normal text", e)
-                    }
-                }
-
-                // Fallback Intent (Not JSON, output standard response)
-                _messages.value = currentList.map { msg ->
-                    if (msg.id == assistantMsg.id) {
-                        msg.copy(
-                            text = firstPassText,
-                            isStreaming = false
-                        )
-                    } else msg
-                }
             } catch (e: Exception) {
-                // Replace placeholder with error message
-                _messages.value = currentList.map { msg ->
-                    if (msg.id == assistantMsg.id) {
-                        msg.copy(
-                            text = "Error: ${e.message ?: "Inference failed"}",
-                            isStreaming = false
-                        )
-                    } else msg
-                }
+                android.util.Log.e("ChatViewModel", "Error in sendMessage", e)
+                setFinalMessage(currentList, assistantMsg,
+                    "Something went wrong. Please try again.")
             } finally {
                 _isGenerating.value = false
             }
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────────
+
+    private fun updateMessage(
+        list: List<ChatMessage>,
+        target: ChatMessage,
+        text: String,
+        streaming: Boolean
+    ) {
+        _messages.value = list.map { msg ->
+            if (msg.id == target.id) msg.copy(text = text, isStreaming = streaming) else msg
+        }
+    }
+
+    private fun setFinalMessage(
+        list: List<ChatMessage>,
+        target: ChatMessage,
+        text: String
+    ) {
+        _messages.value = list.map { msg ->
+            if (msg.id == target.id) msg.copy(text = text, isStreaming = false) else msg
+        }
+        _isGenerating.value = false
+    }
+
+    /**
+     * Parses the raw LLM output into a [ToolCallRouter.ResolvedToolCall].
+     * Strips markdown fences, extracts the JSON object, and applies the
+     * deterministic guardrail to correct any model mistakes.
+     * Returns null if the output is not a recognisable tool call.
+     */
+    private fun parseLlmToolCall(
+        raw: String,
+        userQuestion: String
+    ): ToolCallRouter.ResolvedToolCall? {
+        var text = raw.trim()
+        // Strip markdown code fences if present
+        if (text.startsWith("```")) {
+            text = text.removePrefix("```json").removePrefix("```")
+                .removeSuffix("```").trim()
+        }
+        // Extract first JSON object
+        val start = text.indexOf('{')
+        val end = text.lastIndexOf('}')
+        if (start == -1 || end == -1 || end <= start) return null
+
+        return try {
+            val jsonStr = text.substring(start, end + 1)
+            val element = com.google.gson.JsonParser.parseString(jsonStr).asJsonObject
+            if (!element.has("type") || element.get("type").asString != "tool_call") return null
+
+            val modelFuncName = element.get("name")?.asString ?: return null
+            val argsElement = element.get("arguments")
+            val modelArgsMap: Map<String, Any> = if (argsElement != null && argsElement.isJsonObject) {
+                com.google.gson.Gson().fromJson(
+                    argsElement,
+                    object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
+                ) ?: emptyMap()
+            } else {
+                emptyMap()
+            }
+
+            ToolCallRouter.resolve(
+                userQuestion = userQuestion,
+                modelFunctionName = modelFuncName,
+                modelArguments = modelArgsMap
+            )
+        } catch (e: Exception) {
+            android.util.Log.d("ChatViewModel", "JSON parse failed: ${e.message}")
+            null
         }
     }
 

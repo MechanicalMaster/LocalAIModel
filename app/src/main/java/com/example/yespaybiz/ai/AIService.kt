@@ -32,27 +32,21 @@ object AIService {
     private const val TURN_MODEL = "<start_of_turn>model\n"
     private const val TURN_END   = "<end_of_turn>\n"
 
-    // System instruction: with clear function descriptions for accurate tool selection
-    private const val SYSTEM_PROMPT = 
-        "You are YesPayBiz AI assistant. You can call these tools:\n" +
-        "- getTransactions(): get list of individual transactions with IDs, amounts, status\n" +
-        "- getCollections(): get total collection summary (total amount, count)\n" +
-        "- getSettlementStatus(): get settlement/payout status\n" +
-        "- navigateToTransactions(): open transactions screen\n" +
-        "- navigateToQR(): open QR code screen\n" +
-        "- navigateToSettlement(): open settlement screen\n" +
-        "If user asks about specific transactions, use getTransactions. If user asks about total collections, use getCollections.\n" +
-<<<<<<< ours
-<<<<<<< ours
-        "If user asks \"How much did I collect\" or similar, ALWAYS use getCollections (not getSettlementStatus).\n" +
-        "If user asks for last/recent N transactions, pass limit=N.\n" +
-        "If user asks about today/yesterday/week, pass the matching dateRange.\n" +
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-        "For tool calls, output ONLY JSON: {\"type\":\"tool_call\",\"name\":\"FUNCTION_NAME\",\"arguments\":{}}\n" +
-        "If no tool is needed, answer normally."
+    // System prompt: ONLY extracts intent and arguments, never generates answers.
+    // The LLM's sole job is to output a single JSON tool call — nothing else.
+    private const val SYSTEM_PROMPT =
+        "You are a merchant payment assistant. Your ONLY job is to output a JSON tool call.\n" +
+        "Available tools:\n" +
+        "- getTransactions(dateRange, limit): user wants to see individual transactions\n" +
+        "- getCollections(dateRange): user wants total collected amount or count\n" +
+        "- getSettlementStatus(): user wants settlement or payout info\n" +
+        "- getHoldTransactions(): user asks about transactions on hold or held back\n" +
+        "- navigateToTransactions(): user wants to go to transactions screen\n" +
+        "- navigateToQR(): user wants to open QR code\n" +
+        "- navigateToSettlement(): user wants to go to settlement screen\n" +
+        "dateRange values: \"today\", \"yesterday\", \"this week\"\n" +
+        "Output ONLY a single JSON object, no explanation, no text before or after:\n" +
+        "{\"type\":\"tool_call\",\"name\":\"TOOL_NAME\",\"arguments\":{\"dateRange\":\"today\"}}"
 
     sealed class ModelState {
         object Loading : ModelState()
@@ -101,52 +95,21 @@ object AIService {
     }
 
     /**
-     * Build a Gemma-formatted prompt from the conversation history.
-     * Injects the system prompt into the first user turn.
-     * Clamps history to the last 6 messages to prevent context degradation.
+     * Build a Gemma-formatted prompt for intent + argument extraction.
+     * Only sends the current user message — no history — so the model stays focused
+     * on emitting a clean JSON tool call for this single query.
      */
-    fun buildPrompt(messages: List<ChatMessage>): String {
-        val sb = StringBuilder()
-        
-        // Truncate memory to prevent 270M model degradation
-        val recentMessages = messages.takeLast(6)
-        
-        for ((index, msg) in recentMessages.withIndex()) {
-            if (msg.role == Role.USER || msg.role == Role.SYSTEM) {
-                sb.append(TURN_USER)
-                if (index == 0) {
-                    sb.append(SYSTEM_PROMPT).append("\n\n")
-                }
-                sb.append(msg.text).append(TURN_END)
-            } else {
-                sb.append(TURN_MODEL).append(msg.text).append(TURN_END)
-            }
-        }
-        sb.append(TURN_MODEL)
-        
-        val finalPrompt = sb.toString()
-        Log.d(TAG, "Full Prompt being sent to model:\n$finalPrompt")
-        return finalPrompt
-    }
-
-    /**
-     * Build a simple Gemma-formatted prompt for the 2nd pass (after function execution).
-     * Does NOT inject the tool-calling system prompt, so the model responds in natural language.
-     */
-    fun buildSecondPassPrompt(userQuestion: String, funcName: String, funcResult: String): String {
-        val sb = StringBuilder()
-        
-        // Single user turn: give the model the data and ask it to answer naturally
-        sb.append(TURN_USER)
-        sb.append("Data: $funcResult\n\n")
-        sb.append("Using ONLY the data above, answer this question: $userQuestion\n")
-        sb.append("Do not make up any information not present in the data. Be concise.")
-        sb.append(TURN_END)
-        sb.append(TURN_MODEL)
-        
-        val finalPrompt = sb.toString()
-        Log.d(TAG, "Second pass prompt:\n$finalPrompt")
-        return finalPrompt
+    fun buildPrompt(userMessage: String): String {
+        val prompt = StringBuilder()
+            .append(TURN_USER)
+            .append(SYSTEM_PROMPT)
+            .append("\n\nUser request: ")
+            .append(userMessage)
+            .append(TURN_END)
+            .append(TURN_MODEL)
+            .toString()
+        Log.d(TAG, "Prompt:\n$prompt")
+        return prompt
     }
 
     /**

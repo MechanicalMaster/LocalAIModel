@@ -1,8 +1,12 @@
 package com.example.yespaybiz.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -12,204 +16,349 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Canvas
 import com.example.yespaybiz.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class)
+// Figma Colors
+private val TopBgStart = Color(0xFFD5E0FF)
+private val TopBgEnd = Color(0xFFECF1FF)
+private val PrimaryCta = Color(0xFF1C85DB)
+private val TextDark80 = Color(0xFF222222)
+private val StrokeLight = Color(0xFFE3E9EE)
+private val TerminalBg = Color(0xFF798CC2)
+private val VpaIconColor = Color(0xFFE9661C)
+
 @Composable
 fun ShowQrScreen() {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF8FAFC))
+            .background(Color.White)
     ) {
-        // Header
-        TopAppBar(
-            title = { Text("Show QR", fontWeight = FontWeight.Bold) },
-            navigationIcon = {
-                IconButton(onClick = {}) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = PrimaryBlue)
-                }
-            },
-            actions = {
-                IconButton(onClick = {}) {
-                    Icon(Icons.Default.Share, contentDescription = "Share", tint = PrimaryBlue)
-                }
-                IconButton(onClick = {}) {
-                    Icon(Icons.Default.Download, contentDescription = "Download", tint = PrimaryBlue)
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Color.White,
-            )
+        // Gradient Header Background
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(168.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(TopBgStart, TopBgEnd)
+                    )
+                )
         )
 
         Column(
             modifier = Modifier
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp)
-                .padding(top = 16.dp, bottom = 100.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .fillMaxSize()
+                .padding(top = 45.dp) // SafeArea simulation
         ) {
-            // Tab Switcher — pill shape
-            Surface(
+            // Top Bar
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(24.dp),
-                color = PrimaryBlue
+                    .padding(horizontal = 25.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(modifier = Modifier.fillMaxSize().padding(4.dp)) {
-                    // UPI QR (active)
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                        shape = RoundedCornerShape(20.dp),
-                        color = Color.White,
-                        shadowElevation = 1.dp
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text("UPI QR", color = PrimaryBlue, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        }
-                    }
-                    // CBDC QR (inactive)
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("CBDC QR", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    }
+                IconButton(
+                    onClick = { },
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = PrimaryCta
+                    )
                 }
+                Spacer(modifier = Modifier.width(15.dp))
+                Text(
+                    "Show QR",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = TextDark80
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                
+                // Share Icon
+                Icon(
+                    Icons.Default.Share,
+                    contentDescription = "Share",
+                    tint = PrimaryCta,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(20.dp))
+                // Download Icon (SaveAlt)
+                Icon(
+                    Icons.Default.SaveAlt,
+                    contentDescription = "Download",
+                    tint = PrimaryCta,
+                    modifier = Modifier.size(24.dp)
+                )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(30.dp))
+
+            // Merchant Name
             Text(
-                "Scan the code below to make the payment",
-                fontSize = 14.sp,
-                color = Color(0xFF6B7280),
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // QR Card
-            Card(
+                "Deforus Technologies Private Limited",
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                shape = RoundedCornerShape(24.dp)
-            ) {
-                Box {
-                    Column(
-                        modifier = Modifier.padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // QR Code placeholder
-                        Icon(
-                            Icons.Default.QrCode,
-                            contentDescription = "QR Code",
-                            modifier = Modifier.size(200.dp),
-                            tint = TextDark
-                        )
-                        Spacer(modifier = Modifier.height(20.dp))
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = TextDark80
+            )
 
-                        // VPA line with orange diamond marker
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // Toggle Button (UPI QR | CBDC QR)
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .width(193.dp)
+                        .height(33.dp),
+                    shape = RoundedCornerShape(39.dp),
+                    color = PrimaryCta,
+                    border = BorderStroke(2.dp, Color.White)
+                ) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        // Selected Pill (UPI QR)
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(4.dp)
+                                .width(90.dp)
+                                .height(25.dp),
+                            shape = RoundedCornerShape(36.dp),
+                            color = Color.White
                         ) {
-                            Surface(
-                                modifier = Modifier
-                                    .size(12.dp)
-                                    .rotate(45f),
-                                color = UpiOrange,
-                                shape = RoundedCornerShape(2.dp)
-                            ) {}
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    "UPI QR",
+                                    fontSize = 12.sp,
+                                    color = TextDark80,
+                                    fontWeight = FontWeight.Normal
+                                )
+                            }
+                        }
+
+                        // Unselected (CBDC QR)
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 15.dp)
+                                .fillMaxHeight(),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text(
-                                "VPA : yespay.bizbiz144072@yesbankltd",
+                                "CBDC QR",
                                 fontSize = 12.sp,
-                                color = TextGray,
-                                fontWeight = FontWeight.Medium
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
                             )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "RONAK SHANTILAL SETHIYA",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = TextDark
-                        )
-                    }
-
-                    // UPI badge — bottom left
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .offset(y = (-24).dp),
-                        color = UpiOrange,
-                        shape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)
-                    ) {
-                        Text(
-                            "UPI",
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Dropdown Selector — solid blue
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF3B82F6),
-                shadowElevation = 4.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Base Location (Master Terminal)",
-                        modifier = Modifier.weight(1f),
-                        color = Color.White,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 16.sp
-                    )
-                    Icon(
-                        Icons.Default.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = Color.White
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-            Text("Pay with any app", fontSize = 14.sp, color = TextGray)
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Payment partner icons
+            // YES BANK LOGO
+            Spacer(modifier = Modifier.height(20.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.AccountBalance, contentDescription = "Bank", tint = PrimaryBlue, modifier = Modifier.size(32.dp))
-                Icon(Icons.Default.CreditCard, contentDescription = "Card", tint = PrimaryBlue, modifier = Modifier.size(32.dp))
-                Icon(Icons.Default.Payments, contentDescription = "Pay", tint = PrimaryBlue, modifier = Modifier.size(32.dp))
-                Icon(Icons.Default.Savings, contentDescription = "Save", tint = PrimaryBlue, modifier = Modifier.size(32.dp))
+                // Red Tick Placeholder for Logo
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = null,
+                    tint = Color(0xFFED1F48),
+                    modifier = Modifier
+                        .size(24.dp)
+                        .rotate(-15f)
+                )
+                Text(
+                    "YES BANK",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = Color(0xFF002EDC),
+                    letterSpacing = 1.sp
+                )
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Main Scrollable Content
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 25.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // QR Card
+                Surface(
+                    modifier = Modifier
+                        .width(325.dp)
+                        .wrapContentHeight(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.White,
+                    border = BorderStroke(1.5f.dp, StrokeLight)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 24.dp, horizontal = 22.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "Scan the code below to make the payment",
+                            fontSize = 14.sp,
+                            color = TextDark80,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // QR Code Image (Placeholder)
+                        Icon(
+                            Icons.Default.QrCode2,
+                            contentDescription = "QR Code",
+                            modifier = Modifier.size(281.dp),
+                            tint = TextDark80
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // VPA Line
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Custom VPA Icon (Two overlapping triangles per Figma)
+                            Canvas(modifier = Modifier.size(width = 12.dp, height = 18.dp)) {
+                                val path1 = Path().apply {
+                                    moveTo(0f, 0f)
+                                    lineTo(size.width, size.height/2)
+                                    lineTo(0f, size.height)
+                                    close()
+                                }
+                                drawPath(path1, color = VpaIconColor.copy(alpha = 0.6f))
+                                
+                                val path2 = Path().apply {
+                                    moveTo(size.width * 0.25f, 0f)
+                                    lineTo(size.width, size.height/2)
+                                    lineTo(size.width * 0.25f, size.height)
+                                    close()
+                                }
+                                drawPath(path2, color = VpaIconColor)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "VPA : abc123@yesbankltd",
+                                fontSize = 12.sp,
+                                color = TextDark80
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Account Name
+                        Text(
+                            "Mr. BHUSHAN ANIL DIXIT",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = TextDark80
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Terminal Selector
+                Surface(
+                    modifier = Modifier
+                        .width(325.dp)
+                        .height(50.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = TerminalBg,
+                    border = BorderStroke(1.dp, StrokeLight)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Dadar Branch (Terminal 1)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            Icons.Default.ArrowDropDown,
+                            contentDescription = "Select Terminal",
+                            tint = Color.White
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Pay with any app
+                Text(
+                    "Pay with any app",
+                    fontSize = 11.sp,
+                    color = TextDark80,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // App Icons Row
+                Row(
+                    modifier = Modifier.width(309.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Placeholders for YesPay, GPay, PhonePe, Paytm, Amazon, BHIM, UPI
+                    PaymentAppIcon(Color.Blue, "Yes")
+                    PaymentAppIcon(Color.White, "G", hasBorder = true)
+                    PaymentAppIcon(Color(0xFF6739B7), "Pe")
+                    PaymentAppIcon(Color.White, "Pay", hasBorder = true)
+                    PaymentAppIcon(Color.White, "a", hasBorder = true)
+                    PaymentAppIcon(Color.White, "BHIM", hasBorder = true)
+                    PaymentAppIcon(Color.White, "UPI", hasBorder = true)
+                }
+
+                Spacer(modifier = Modifier.height(100.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun PaymentAppIcon(bgColor: Color, label: String, hasBorder: Boolean = false) {
+    Surface(
+        modifier = Modifier.size(30.dp),
+        shape = CircleShape,
+        color = bgColor,
+        border = if (hasBorder) BorderStroke(1.dp, StrokeLight) else null
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                label,
+                color = if (bgColor == Color.White) TextDark80 else Color.White,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

@@ -1,5 +1,14 @@
 package com.example.yespaybiz.ui.screens
 
+import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.speech.RecognitionListener
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -10,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -18,29 +28,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import com.example.yespaybiz.ai.AIService
 import com.example.yespaybiz.ai.ChatMessage
 import com.example.yespaybiz.ai.ChatViewModel
 import com.example.yespaybiz.ai.Role
 import com.example.yespaybiz.ui.theme.*
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 @Composable
 fun ConversationScreen(viewModel: ChatViewModel) {
     val context = LocalContext.current
     val modelState by viewModel.modelState.collectAsState()
-    
+
     // File picker launcher
-    val launcher = rememberLauncherForActivityResult(
+    val fileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
@@ -71,8 +82,8 @@ fun ConversationScreen(viewModel: ChatViewModel) {
                     color = TextGray
                 )
                 Spacer(modifier = Modifier.height(24.dp))
-                Button(onClick = { 
-                    launcher.launch(arrayOf("*/*")) // launch file picker
+                Button(onClick = {
+                    fileLauncher.launch(arrayOf("*/*"))
                 }) {
                     Text("Select Model File")
                 }
@@ -117,7 +128,7 @@ fun ConversationScreen(viewModel: ChatViewModel) {
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
                     Text(
-                        "AI Assistant",
+                        "YES BIZ AI Assistant",
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = Color.White
@@ -127,21 +138,20 @@ fun ConversationScreen(viewModel: ChatViewModel) {
                             is AIService.ModelState.Loading,
                             is AIService.ModelState.ImportingModel,
                             is AIService.ModelState.MissingModel -> "Loading model…"
-                            is AIService.ModelState.Ready   -> "On-device · Offline"
-                            is AIService.ModelState.Error   -> "Error loading model"
+                            is AIService.ModelState.Ready -> "On-device · Offline"
+                            is AIService.ModelState.Error -> "Error loading model"
                         },
                         fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.75f)
                     )
                 }
                 Spacer(modifier = Modifier.weight(1f))
-                // Status indicator dot
                 val dotColor = when (modelState) {
-                    is AIService.ModelState.Ready   -> Color(0xFF4CAF50)
+                    is AIService.ModelState.Ready -> Color(0xFF4CAF50)
                     is AIService.ModelState.Loading,
                     is AIService.ModelState.ImportingModel,
                     is AIService.ModelState.MissingModel -> Color(0xFFFFC107)
-                    is AIService.ModelState.Error   -> ErrorRed
+                    is AIService.ModelState.Error -> ErrorRed
                 }
                 Surface(
                     modifier = Modifier.size(10.dp),
@@ -157,7 +167,7 @@ fun ConversationScreen(viewModel: ChatViewModel) {
                 is AIService.ModelState.Loading,
                 is AIService.ModelState.ImportingModel,
                 is AIService.ModelState.MissingModel -> ModelLoadingState()
-                is AIService.ModelState.Error   -> ModelErrorState(
+                is AIService.ModelState.Error -> ModelErrorState(
                     message = (modelState as AIService.ModelState.Error).message
                 )
                 is AIService.ModelState.Ready -> {
@@ -290,8 +300,8 @@ private fun EmptyConversationHint() {
         )
         Spacer(modifier = Modifier.height(24.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SuggestionChip("What is UPI?")
-            SuggestionChip("GST basics")
+            SuggestionChip("Show last 5 transactions")
+            SuggestionChip("Today's collection")
         }
     }
 }
@@ -300,8 +310,7 @@ private fun EmptyConversationHint() {
 private fun SuggestionChip(text: String) {
     Surface(
         shape = RoundedCornerShape(20.dp),
-        color = SecondaryBlue,
-        modifier = Modifier
+        color = SecondaryBlue
     ) {
         Text(
             text,
@@ -433,16 +442,6 @@ private fun MessageBubble(message: ChatMessage) {
 
 @Composable
 private fun StreamingDot() {
-    val infiniteTransition = rememberInfiniteTransition(label = "streaming")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(600, easing = EaseInOut),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dot_alpha"
-    )
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         repeat(3) { i ->
             val delayedAlpha by rememberInfiniteTransition(label = "dot$i").animateFloat(
@@ -465,6 +464,10 @@ private fun StreamingDot() {
     }
 }
 
+// ── Voice state ──────────────────────────────────────────────────────────────────
+
+private enum class VoiceState { IDLE, LISTENING, ERROR }
+
 @Composable
 private fun InputBar(
     enabled: Boolean,
@@ -472,66 +475,216 @@ private fun InputBar(
     onSend: (String) -> Unit
 ) {
     var text by remember { mutableStateOf("") }
+    var voiceState by remember { mutableStateOf(VoiceState.IDLE) }
+    val context = LocalContext.current
+
+    // SpeechRecognizer lives as a remembered ref so we can cancel it
+    val recognizer = remember { SpeechRecognizer.createSpeechRecognizer(context) }
+    DisposableEffect(Unit) {
+        onDispose { recognizer.destroy() }
+    }
+
+    // Permission launcher
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startListening(recognizer, context) { result ->
+                text = result
+                voiceState = VoiceState.IDLE
+            }
+            voiceState = VoiceState.LISTENING
+        }
+    }
+
+    fun onMicTap() {
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) return
+        if (voiceState == VoiceState.LISTENING) {
+            recognizer.stopListening()
+            voiceState = VoiceState.IDLE
+            return
+        }
+        val hasPermission = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (hasPermission) {
+            startListening(recognizer, context) { result ->
+                text = result
+                voiceState = VoiceState.IDLE
+            }
+            voiceState = VoiceState.LISTENING
+        } else {
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    // Pulsing scale animation for mic while listening
+    val micScale by rememberInfiniteTransition(label = "mic_pulse").animateFloat(
+        initialValue = 1f,
+        targetValue = 1.18f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = EaseInOut),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "mic_scale"
+    )
 
     Surface(
         shadowElevation = 8.dp,
         color = Color.White
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier.weight(1f),
-                placeholder = {
-                    Text(
-                        if (isGenerating) "Generating response…" else "Type a message…",
-                        fontSize = 14.sp,
-                        color = TextMuted
-                    )
-                },
-                enabled = enabled,
-                maxLines = 4,
-                shape = RoundedCornerShape(24.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryCTA,
-                    unfocusedBorderColor = StrokeLight,
-                    disabledBorderColor = StrokeLight.copy(alpha = 0.5f)
-                ),
-                textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            FloatingActionButton(
-                onClick = {
-                    if (text.isNotBlank() && enabled) {
-                        onSend(text)
-                        text = ""
-                    }
-                },
-                modifier = Modifier.size(48.dp),
-                containerColor = if (enabled && text.isNotBlank()) PrimaryCTA else StrokeLight,
-                contentColor = Color.White,
-                elevation = FloatingActionButtonDefaults.elevation(0.dp)
+            // "Listening…" label
+            if (voiceState == VoiceState.LISTENING) {
+                Text(
+                    "Listening…",
+                    fontSize = 12.sp,
+                    color = PrimaryCTA,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(bottom = 6.dp)
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (isGenerating) {
-                    CircularProgressIndicator(
-                        color = Color.White,
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(20.dp)
-                    )
-                } else {
+                // Mic button (left of input field)
+                val micBg = if (voiceState == VoiceState.LISTENING)
+                    PrimaryCTA
+                else
+                    Color(0xFFF0F4FF)
+
+                Surface(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .then(
+                            if (voiceState == VoiceState.LISTENING)
+                                Modifier.scale(micScale)
+                            else Modifier
+                        ),
+                    shape = CircleShape,
+                    color = micBg,
+                    onClick = { onMicTap() }
+                ) {
                     Icon(
-                        Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send",
-                        modifier = Modifier.size(20.dp)
+                        Icons.Default.Mic,
+                        contentDescription = if (voiceState == VoiceState.LISTENING) "Stop listening" else "Voice input",
+                        tint = if (voiceState == VoiceState.LISTENING) Color.White else PrimaryCTA,
+                        modifier = Modifier.padding(10.dp)
                     )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Text field
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = {
+                        Text(
+                            when {
+                                isGenerating -> "Generating response…"
+                                voiceState == VoiceState.LISTENING -> "Listening…"
+                                else -> "Tap mic to speak, or type a message…"
+                            },
+                            fontSize = 13.sp,
+                            color = TextMuted
+                        )
+                    },
+                    enabled = enabled && voiceState != VoiceState.LISTENING,
+                    maxLines = 4,
+                    shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PrimaryCTA,
+                        unfocusedBorderColor = StrokeLight,
+                        disabledBorderColor = StrokeLight.copy(alpha = 0.5f)
+                    ),
+                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Send button
+                FloatingActionButton(
+                    onClick = {
+                        if (text.isNotBlank() && enabled) {
+                            onSend(text)
+                            text = ""
+                        }
+                    },
+                    modifier = Modifier.size(44.dp),
+                    containerColor = if (enabled && text.isNotBlank()) PrimaryCTA else StrokeLight,
+                    contentColor = Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(0.dp)
+                ) {
+                    if (isGenerating) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    } else {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+// ── SpeechRecognizer helper ───────────────────────────────────────────────────────
+
+private fun startListening(
+    recognizer: SpeechRecognizer,
+    context: android.content.Context,
+    onResult: (String) -> Unit
+) {
+    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
+        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+    }
+
+    recognizer.setRecognitionListener(object : RecognitionListener {
+        override fun onReadyForSpeech(params: android.os.Bundle?) {}
+        override fun onBeginningOfSpeech() {}
+        override fun onRmsChanged(rmsdB: Float) {}
+        override fun onBufferReceived(buffer: ByteArray?) {}
+        override fun onEndOfSpeech() {}
+        override fun onPartialResults(partialResults: android.os.Bundle?) {}
+        override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+
+        override fun onResults(results: android.os.Bundle?) {
+            val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            val transcript = matches?.firstOrNull().orEmpty()
+            onResult(transcript)
+        }
+
+        override fun onError(error: Int) {
+            // Surface error only for non-trivial cases (not user cancelled)
+            if (error != SpeechRecognizer.ERROR_CLIENT &&
+                error != SpeechRecognizer.ERROR_RECOGNIZER_BUSY
+            ) {
+                onResult("") // clear / reset gracefully
+            } else {
+                onResult("")
+            }
+        }
+    })
+
+    recognizer.startListening(intent)
 }
