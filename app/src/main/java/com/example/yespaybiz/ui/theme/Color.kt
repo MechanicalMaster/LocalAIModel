@@ -13,6 +13,10 @@ val TextDark = Color(0xFF222222)
 val TextGray = Color(0xFF677F9D)
 val TextMuted = Color(0xFF8E9BB1)
 
+// Navigation Bar
+val NavBarSelectedIcon = Color(0xFF1C85DB)
+val NavBarSelectedText = Color(0xFF2177BC)
+
 // Semantic
 val SuccessGreen = Color(0xFF4CAF50)
 val ErrorRed = Color(0xFFDA5555)

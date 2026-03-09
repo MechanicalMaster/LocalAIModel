@@ -2,6 +2,7 @@ package com.example.yespaybiz.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -25,13 +26,13 @@ import androidx.compose.ui.unit.sp
 import com.example.yespaybiz.ui.theme.*
 
 @Composable
-fun HomeScreen() {
+fun HomeScreen(onProfileClick: () -> Unit = {}) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
     ) {
-        item { HeaderAndCollectSection() }
+        item { HeaderAndCollectSection(onProfileClick = onProfileClick) }
         item { StatsSection() }
         item { DisputesSection() }
         item { ManageBusinessSection() }
@@ -43,7 +44,7 @@ fun HomeScreen() {
 // ──────────────────────────────────────────────────────────
 
 @Composable
-fun HeaderAndCollectSection() {
+fun HeaderAndCollectSection(onProfileClick: () -> Unit = {}) {
     // Figma: Rectangle 1029 — "Trial/BG1" reversed: ECF1FF → D5E0FF top area
     Box(
         modifier = Modifier
@@ -87,6 +88,14 @@ fun HeaderAndCollectSection() {
                         "Collect Requests",
                         fontSize = 12.sp,
                         color = TextGray
+                    )
+                }
+                // Profile icon — navigates to Profile page
+                IconButton(onClick = { onProfileClick() }) {
+                    Icon(
+                        Icons.Default.Person,
+                        contentDescription = "Profile",
+                        tint = TextDark
                     )
                 }
                 // Volume icon
