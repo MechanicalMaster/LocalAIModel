@@ -24,6 +24,10 @@ object AIService {
     // Model filename — used across the app for import and initialization
     const val MODEL_FILENAME = "gemma3-1B-it-int4.task"
 
+    // Version stamps written into every log row so eval can be diffed across releases
+    const val MODEL_VERSION  = "gemma3-1B-it-int4"
+    const val PROMPT_VERSION = "v3"   // bump whenever SYSTEM_PROMPT changes
+
     // Max new tokens to generate per response
     private const val MAX_TOKENS = 1024
 
@@ -98,11 +102,15 @@ object AIService {
      * Build a Gemma-formatted prompt for intent + argument extraction.
      * Only sends the current user message — no history — so the model stays focused
      * on emitting a clean JSON tool call for this single query.
+     *
+     * [contextHint] is an optional one-line summary of the previous function call,
+     * injected so the model can resolve follow-up questions correctly.
      */
-    fun buildPrompt(userMessage: String): String {
+    fun buildPrompt(userMessage: String, contextHint: String = ""): String {
         val prompt = StringBuilder()
             .append(TURN_USER)
             .append(SYSTEM_PROMPT)
+            .apply { if (contextHint.isNotBlank()) append(contextHint) }
             .append("\n\nUser request: ")
             .append(userMessage)
             .append(TURN_END)

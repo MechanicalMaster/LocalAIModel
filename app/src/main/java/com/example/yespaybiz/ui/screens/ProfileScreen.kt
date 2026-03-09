@@ -1,5 +1,8 @@
 package com.example.yespaybiz.ui.screens
 
+import android.content.Context
+import android.content.Intent
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,18 +16,21 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.yespaybiz.ai.ChatViewModel
 import com.example.yespaybiz.ui.theme.*
+import java.io.File
 
 // ──────────────────────────────────────────────────────────
 //  Colors from Figma CSS
@@ -39,7 +45,19 @@ private val UpgradeButtonColor = Color(0xFF1C85DB)
 private val AlertRedBadge = Color(0xFFDA5555)
 
 @Composable
-fun ProfileScreen(onBackClick: () -> Unit = {}) {
+fun ProfileScreen(
+    onBackClick: () -> Unit = {},
+    chatViewModel: ChatViewModel? = null
+) {
+    val context = LocalContext.current
+
+    // Observe export events from the ViewModel and share the file when ready
+    LaunchedEffect(chatViewModel) {
+        chatViewModel?.exportEvent?.collect { file ->
+            shareLogFile(context, file)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -65,13 +83,7 @@ fun ProfileScreen(onBackClick: () -> Unit = {}) {
             ProfileMenuItem(Icons.Default.CreditCard, "Collection Fees Management")
 
             Spacer(modifier = Modifier.height(20.dp))
-
-            // Divider — Figma: 1px solid #E3E9EE
-            HorizontalDivider(
-                color = StrokeLight,
-                thickness = 1.dp
-            )
-
+            HorizontalDivider(color = StrokeLight, thickness = 1.dp)
             Spacer(modifier = Modifier.height(20.dp))
 
             // ── Section 2: Other menu items ──
@@ -89,9 +101,19 @@ fun ProfileScreen(onBackClick: () -> Unit = {}) {
             Spacer(modifier = Modifier.height(25.dp))
             ProfileMenuItem(Icons.Default.Call, "Contact Us")
 
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider(color = StrokeLight, thickness = 1.dp)
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // ── Section 3: Developer / AI diagnostics ──
+            ProfileMenuItem(
+                icon    = Icons.Default.BugReport,
+                label   = "Export AI Chat Logs",
+                onClick = { chatViewModel?.exportLogs() }
+            )
+
             Spacer(modifier = Modifier.height(40.dp))
 
-            // ── App Version ──
             Text(
                 "App Version: 10.1.2",
                 fontSize = 11.sp,
@@ -103,6 +125,21 @@ fun ProfileScreen(onBackClick: () -> Unit = {}) {
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
+
+private fun shareLogFile(context: Context, file: File) {
+    val uri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.fileprovider",
+        file
+    )
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_SUBJECT, "YesPayBiz AI Chat Logs")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share AI Logs"))
 }
 
 // ──────────────────────────────────────────────────────────
@@ -402,11 +439,11 @@ private fun UpgradeCard() {
 //  MENU ITEM ROW
 // ──────────────────────────────────────────────────────────
 @Composable
-private fun ProfileMenuItem(icon: ImageVector, label: String) {
+private fun ProfileMenuItem(icon: ImageVector, label: String, onClick: () -> Unit = {}) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { },
+            .clickable { onClick() },
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(

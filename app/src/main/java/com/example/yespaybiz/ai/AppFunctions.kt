@@ -185,8 +185,9 @@ object AppFunctions {
     }
 
     private fun getTransactions(dateRange: String, limit: Int?): String {
-        var txns = txnsForRange(dateRange)
-        if (limit != null && limit > 0) txns = txns.takeLast(limit)
+        // Sort newest-first so "last N" always returns the most recent
+        var txns = txnsForRange(dateRange).sortedByDescending { it.date.toString() + it.time }
+        if (limit != null && limit > 0) txns = txns.take(limit)
 
         val response = mapOf(
             "dateRange"    to dateRange,

@@ -116,10 +116,11 @@ fun YesPayBizApp() {
     ) { innerPadding ->
         Surface(modifier = Modifier.fillMaxSize().padding(innerPadding), color = MaterialTheme.colorScheme.background) {
             if (showProfile) {
-                ProfileScreen(onBackClick = { showProfile = false })
+                ProfileScreen(onBackClick = { showProfile = false }, chatViewModel = chatViewModel)
             } else {
                 when (currentDestination) {
                     AppDestinations.HOME         -> HomeScreen(onProfileClick = { showProfile = true })
+
                     AppDestinations.TRANSACTIONS -> TransactionsScreen()
                     AppDestinations.SHOW_QR      -> ShowQrScreen()
                     AppDestinations.SETTLEMENT   -> SettlementScreen()

@@ -172,30 +172,8 @@ fun ShowQrScreen() {
                 }
             }
 
-            // YES BANK LOGO
+            // Removed YES BANK LOGO
             Spacer(modifier = Modifier.height(20.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Red Tick Placeholder for Logo
-                Icon(
-                    Icons.Default.Check,
-                    contentDescription = null,
-                    tint = Color(0xFFED1F48),
-                    modifier = Modifier
-                        .size(24.dp)
-                        .rotate(-15f)
-                )
-                Text(
-                    "YES BANK",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp,
-                    color = Color(0xFF002EDC),
-                    letterSpacing = 1.sp
-                )
-            }
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -260,7 +238,7 @@ fun ShowQrScreen() {
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                "VPA : abc123@yesbankltd",
+                                "VPA : qr@ailtd",
                                 fontSize = 12.sp,
                                 color = TextDark80
                             )

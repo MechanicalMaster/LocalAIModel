@@ -10,5 +10,8 @@ data class ChatMessage(
     val id: Long = System.nanoTime(),
     val role: Role,
     val text: String,
-    val isStreaming: Boolean = false
+    val isStreaming: Boolean = false,
+    // Suggested follow-up queries shown as chips below an assistant reply.
+    // Empty list = show no chips.
+    val suggestedFollowUps: List<String> = emptyList()
 )

@@ -439,8 +439,8 @@ fun ManageBusinessSection() {
         Spacer(modifier = Modifier.height(12.dp))
 
         LazyRow(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            item { BusinessCard("Order YESPAY BIZ\nQR Standee") }
-            item { BusinessCard("Order YESPAY BIZ\nSoundBox") }
+            item { BusinessCard("Order\nQR Standee") }
+            item { BusinessCard("Order\nSoundBox") }
         }
     }
 }
