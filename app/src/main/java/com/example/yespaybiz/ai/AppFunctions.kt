@@ -23,8 +23,7 @@ object AppFunctions {
                 }
                 "getTransactions" -> {
                     val dateRange = args["dateRange"] as? String ?: "today"
-                    val limit = (args["limit"] as? Number)?.toInt()
-                    getTransactions(dateRange, limit)
+                    getTransactions(dateRange)
                 }
                 "getSettlementStatus" -> {
                     getSettlementStatus()
@@ -55,21 +54,16 @@ object AppFunctions {
         return gson.toJson(response)
     }
 
-    private fun getTransactions(dateRange: String, limit: Int?): String {
+    private fun getTransactions(dateRange: String): String {
         // Return a mock list of recent transactions
         val transactions = listOf(
             mapOf("id" to "TXN1001", "amount" to 150.00, "status" to "SUCCESS", "method" to "UPI", "time" to "10:30 AM"),
             mapOf("id" to "TXN1002", "amount" to 850.50, "status" to "SUCCESS", "method" to "CARD", "time" to "11:15 AM"),
             mapOf("id" to "TXN1003", "amount" to 45.00,  "status" to "FAILED",  "method" to "UPI", "time" to "12:05 PM")
         )
-        val filteredTransactions = if (limit != null && limit > 0) {
-            transactions.takeLast(limit)
-        } else {
-            transactions
-        }
         val response = mapOf(
             "dateRange" to dateRange,
-            "transactions" to filteredTransactions
+            "transactions" to transactions
         )
         return gson.toJson(response)
     }
@@ -79,8 +73,7 @@ object AppFunctions {
             "status" to "PENDING",
             "amountPendingINR" to 14500.50,
             "estimatedSettlementTime" to "Today, 11:30 PM",
-            "bankAccountEnd" to "4509",
-            "method" to "BANK_TRANSFER"
+            "bankAccountEnd" to "4509"
         )
         return gson.toJson(response)
     }

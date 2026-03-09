@@ -26,7 +26,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _navigationEvent = MutableSharedFlow<String>()
     val navigationEvent = _navigationEvent.asSharedFlow()
-    private val toolFormattedMessageIds = mutableSetOf<Long>()
 
     // Pass the Application context
     init {
@@ -89,10 +88,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val promptMessages = currentList.dropLast(1).filterNot { msg ->
-                    msg.role == Role.ASSISTANT && toolFormattedMessageIds.contains(msg.id)
-                }
-                val prompt = AIService.buildPrompt(promptMessages)
+                val prompt = AIService.buildPrompt(currentList.dropLast(1))
                 val accumulated = java.lang.StringBuilder()
 
                 android.util.Log.d("ChatViewModel", "Calling AIService.sendMessage...")
@@ -134,12 +130,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     try {
                         val element = com.google.gson.JsonParser.parseString(firstPassText).asJsonObject
                         if (element.has("type") && element.get("type").asString == "tool_call") {
-                            val funcName = element.get("name").asString
+                            val modelFuncName = element.get("name").asString
                             val argsElement = element.get("arguments")
-                            val argsMap: Map<String, Any> = if (argsElement != null && argsElement.isJsonObject) {
+                            val modelArgsMap: Map<String, Any> = if (argsElement != null && argsElement.isJsonObject) {
                                 com.google.gson.Gson().fromJson<Map<String, Any>>(argsElement, object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type) ?: emptyMap()
                             } else {
                                 emptyMap()
+                            }
+                            val resolvedCall = ToolCallRouter.resolve(
+                                userQuestion = userText.trim(),
+                                modelFunctionName = modelFuncName,
+                                modelArguments = modelArgsMap
+                            )
+                            val funcName = resolvedCall.functionName
+                            val argsMap = resolvedCall.arguments
+                            if (modelFuncName != funcName) {
+                                android.util.Log.w(
+                                    "ChatViewModel",
+                                    "Tool call corrected: model=$modelFuncName -> resolved=$funcName, user='${userText.trim()}'"
+                                )
                             }
 
                             if (funcName.startsWith("navigate")) {
@@ -149,7 +158,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                                         msg.copy(text = "Navigating to ${funcName.removePrefix("navigateTo")}...", isStreaming = false)
                                     } else msg
                                 }
-                                toolFormattedMessageIds.add(assistantMsg.id)
                                 _navigationEvent.emit(funcName)
                                 _isGenerating.value = false
                                 return@launch
@@ -164,18 +172,42 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
                             val funcResult = AppFunctions.executeFunction(funcName, argsMap)
                             android.util.Log.d("ChatViewModel", "Function $funcName returned: $funcResult")
-                            val finalText = ToolResponseFormatter.format(
-                                functionName = funcName,
+
+                            // 2nd Pass: Build a clean prompt WITHOUT tool-calling instructions
+                            val finalPrompt = AIService.buildSecondPassPrompt(
                                 userQuestion = userText.trim(),
-                                functionResult = funcResult
+                                funcName = funcName,
+                                funcResult = funcResult
                             )
-                            android.util.Log.d("ChatViewModel", "Deterministic final text: $finalText")
+                            
+                            assistantMsg = ChatMessage(role = Role.ASSISTANT, text = "", isStreaming = true)
+                            currentList = currentList.dropLast(1) + assistantMsg
+                            _messages.value = currentList
+
+                            val finalAccumulated = java.lang.StringBuilder()
+                            
+                            AIService.sendMessage(finalPrompt) { partial ->
+                                finalAccumulated.append(partial)
+                                _messages.value = currentList.map { msg ->
+                                    if (msg.id == assistantMsg.id) {
+                                        msg.copy(text = finalAccumulated.toString().trim(), isStreaming = true)
+                                    } else msg
+                                }
+                            }
+
+                            // Clean up the second pass response (strip backticks if model wraps them)
+                            var secondPassText = finalAccumulated.toString().trim()
+                            if (secondPassText.startsWith("```")) {
+                                secondPassText = secondPassText.removePrefix("```json")
+                                    .removePrefix("```").removeSuffix("```").trim()
+                            }
+                            android.util.Log.d("ChatViewModel", "Second pass final text: $secondPassText")
+
                             _messages.value = currentList.map { msg ->
                                 if (msg.id == assistantMsg.id) {
-                                    msg.copy(text = finalText, isStreaming = false)
+                                    msg.copy(text = secondPassText, isStreaming = false)
                                 } else msg
                             }
-                            toolFormattedMessageIds.add(assistantMsg.id)
                             _isGenerating.value = false
                             return@launch
                         }
@@ -193,7 +225,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     } else msg
                 }
-                toolFormattedMessageIds.remove(assistantMsg.id)
             } catch (e: Exception) {
                 // Replace placeholder with error message
                 _messages.value = currentList.map { msg ->
@@ -204,7 +235,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     } else msg
                 }
-                toolFormattedMessageIds.remove(assistantMsg.id)
             } finally {
                 _isGenerating.value = false
             }

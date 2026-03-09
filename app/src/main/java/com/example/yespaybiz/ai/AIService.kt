@@ -35,15 +35,22 @@ object AIService {
     // System instruction: with clear function descriptions for accurate tool selection
     private const val SYSTEM_PROMPT = 
         "You are YesPayBiz AI assistant. You can call these tools:\n" +
-        "- getTransactions(dateRange, limit): get list of individual transactions with IDs, amounts, status, method and time\n" +
-        "- getCollections(dateRange): get total collection summary (total amount, count)\n" +
+        "- getTransactions(): get list of individual transactions with IDs, amounts, status\n" +
+        "- getCollections(): get total collection summary (total amount, count)\n" +
         "- getSettlementStatus(): get settlement/payout status\n" +
         "- navigateToTransactions(): open transactions screen\n" +
         "- navigateToQR(): open QR code screen\n" +
         "- navigateToSettlement(): open settlement screen\n" +
         "If user asks about specific transactions, use getTransactions. If user asks about total collections, use getCollections.\n" +
+<<<<<<< ours
+<<<<<<< ours
+        "If user asks \"How much did I collect\" or similar, ALWAYS use getCollections (not getSettlementStatus).\n" +
         "If user asks for last/recent N transactions, pass limit=N.\n" +
         "If user asks about today/yesterday/week, pass the matching dateRange.\n" +
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
         "For tool calls, output ONLY JSON: {\"type\":\"tool_call\",\"name\":\"FUNCTION_NAME\",\"arguments\":{}}\n" +
         "If no tool is needed, answer normally."
 
@@ -119,6 +126,26 @@ object AIService {
         
         val finalPrompt = sb.toString()
         Log.d(TAG, "Full Prompt being sent to model:\n$finalPrompt")
+        return finalPrompt
+    }
+
+    /**
+     * Build a simple Gemma-formatted prompt for the 2nd pass (after function execution).
+     * Does NOT inject the tool-calling system prompt, so the model responds in natural language.
+     */
+    fun buildSecondPassPrompt(userQuestion: String, funcName: String, funcResult: String): String {
+        val sb = StringBuilder()
+        
+        // Single user turn: give the model the data and ask it to answer naturally
+        sb.append(TURN_USER)
+        sb.append("Data: $funcResult\n\n")
+        sb.append("Using ONLY the data above, answer this question: $userQuestion\n")
+        sb.append("Do not make up any information not present in the data. Be concise.")
+        sb.append(TURN_END)
+        sb.append(TURN_MODEL)
+        
+        val finalPrompt = sb.toString()
+        Log.d(TAG, "Second pass prompt:\n$finalPrompt")
         return finalPrompt
     }
 
