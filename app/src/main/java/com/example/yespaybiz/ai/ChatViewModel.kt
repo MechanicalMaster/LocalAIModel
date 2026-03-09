@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
+import java.time.LocalTime
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -27,14 +29,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _navigationEvent = MutableSharedFlow<String>()
     val navigationEvent = _navigationEvent.asSharedFlow()
 
-    // Shared flow that carries a File to share when the user requests log export
     private val _exportEvent = MutableSharedFlow<File>()
     val exportEvent = _exportEvent.asSharedFlow()
 
-    /**
-     * Conversation context: remembers the last successfully executed function call
-     * so follow-up questions (e.g. "which one failed?") can reference it.
-     */
+    // Conversation context
     private var lastFunctionName: String = ""
     private var lastFunctionArgs: Map<String, Any> = emptyMap()
     private var lastFunctionResult: String = ""
@@ -42,6 +40,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     init {
         AIService.initialize(application)
         ChatLogger.init(application)
+        // Show greeting + proactive alerts shortly after the screen opens
+        viewModelScope.launch {
+            delay(600)
+            loadProactiveAlerts()
+        }
+    }
+
+    // ── Proactive alerts on open ──────────────────────────────────────────────────
+
+    private fun loadProactiveAlerts() {
+        val greeting = timeAwareGreeting()
+        val greetMsg = ChatMessage(
+            role = Role.ASSISTANT,
+            text = greeting,
+            suggestedFollowUps = listOf("Daily summary", "Settlement status", "Show hold transactions")
+        )
+        _messages.value = listOf(greetMsg)
+    }
+
+    private fun timeAwareGreeting(): String {
+        val hour = LocalTime.now().hour
+        val salutation = when {
+            hour < 12 -> "Good morning"
+            hour < 17 -> "Good afternoon"
+            else      -> "Good evening"
+        }
+        return "$salutation! I'm your AI Assistant.\nAsk me about your collections, transactions, settlements, or holds."
     }
 
     // ── Model import ──────────────────────────────────────────────────────────────
@@ -53,12 +78,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 field.isAccessible = true
                 val stateFlow = field.get(AIService) as MutableStateFlow<AIService.ModelState>
                 stateFlow.value = AIService.ModelState.ImportingModel
-
                 val destFile = File(context.filesDir, AIService.MODEL_FILENAME)
-                context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                    FileOutputStream(destFile).use { outputStream ->
-                        inputStream.copyTo(outputStream)
-                    }
+                context.contentResolver.openInputStream(uri)?.use { ins ->
+                    FileOutputStream(destFile).use { out -> ins.copyTo(out) }
                 }
                 AIService.initialize(context)
             } catch (e: Exception) {
@@ -81,60 +103,47 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── Main send flow ────────────────────────────────────────────────────────────
 
-    /**
-     * Hybrid flow:
-     *
-     * classify() →
-     *   UnknownIntent   → instant canned refusal (no LLM)
-     *   LowConfidence   → LLM called; if JSON parse fails → ask for clarification
-     *   KnownIntent     → LLM called for arg extraction → guardrail → tool → Kotlin formatter
-     *
-     * Conversation context is injected into the classifier and LLM prompt so
-     * follow-up questions ("which one failed?") resolve correctly.
-     */
     fun sendMessage(userText: String) {
         if (userText.isBlank() || _isGenerating.value) return
         val trimmed = userText.trim()
         val startMs = System.currentTimeMillis()
+        val useHinglish = ToolCallRouter.isHinglish(trimmed)
 
-        // ── Append user bubble ────────────────────────────────────────────────────
         val userMsg = ChatMessage(role = Role.USER, text = trimmed)
         var currentList = _messages.value + userMsg
         _messages.value = currentList
 
-        // ── Placeholder assistant bubble ──────────────────────────────────────────
         var assistantMsg = ChatMessage(role = Role.ASSISTANT, text = "", isStreaming = true)
         currentList = currentList + assistantMsg
         _messages.value = currentList
         _isGenerating.value = true
 
         viewModelScope.launch(Dispatchers.IO) {
-
-            // Mutable log fields — filled in as the pipeline progresses
-            var classifierStr   = ""
-            var llmCalled       = false
-            var llmRaw          = ""
-            var llmParseOk      = false
-            var guardrailFixed  = false
-            var functionCalled  = ""
-            var finalAnswer     = ""
+            var classifierStr  = ""
+            var llmCalled      = false
+            var llmRaw         = ""
+            var llmParseOk     = false
+            var guardrailFixed = false
+            var functionCalled = ""
+            var finalAnswer    = ""
             var errorStr: String? = null
 
             try {
-                // ── Step 1: Kotlin classifier ─────────────────────────────────────
+                // Step 1 — classify
                 val intent = ToolCallRouter.classify(resolveWithContext(trimmed))
                 classifierStr = intent.describe()
 
-                // ── UnknownIntent: refuse, no LLM ────────────────────────────────
                 if (intent is ToolCallRouter.UnknownIntent) {
-                    finalAnswer = "I can only help with your YesPayBiz business data.\n" +
-                                  "Try asking about your transactions, collections, settlement, or hold transactions."
+                    finalAnswer = if (useHinglish)
+                        "Mujhe sirf YesPayBiz business data ke baare mein puchho.\nJaise: \"aaj ka collection\", \"transactions dikhao\", ya \"settlement kab aayega\"."
+                    else
+                        "I can only help with your YesPayBiz business data.\nTry: collections, transactions, settlement, holds, or disputes."
                     functionCalled = "REFUSED"
                     setFinal(currentList, assistantMsg, finalAnswer, emptyList())
                     return@launch
                 }
 
-                // ── Navigation: no LLM, no data needed ───────────────────────────
+                // Step 2 — navigation (no LLM)
                 val classified = intent as? ToolCallRouter.KnownIntent
                 if (classified?.functionName?.startsWith("navigate") == true) {
                     finalAnswer = "Opening ${classified.functionName.removePrefix("navigateTo")}…"
@@ -144,40 +153,31 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // ── Step 2: LLM — intent + arg extraction ─────────────────────────
-                update(currentList, assistantMsg, "Thinking…")
+                // Step 3 — LLM for arg extraction
+                update(currentList, assistantMsg, if (useHinglish) "Soch raha hoon…" else "Thinking…")
                 llmCalled = true
-
-                val contextHint = buildContextHint()
-                val prompt = AIService.buildPrompt(trimmed, contextHint)
+                val prompt = AIService.buildPrompt(trimmed, buildContextHint())
                 val accumulated = StringBuilder()
-
-                AIService.sendMessage(prompt) { partial ->
-                    accumulated.append(partial)
-                    // Don't stream raw JSON to the user
-                }
+                AIService.sendMessage(prompt) { partial -> accumulated.append(partial) }
                 llmRaw = accumulated.toString()
 
-                // ── Step 3: Parse + guardrail ─────────────────────────────────────
-                val resolved = parseLlmToolCall(llmRaw, trimmed)
+                // Step 4 — parse + guardrail
+                val resolved   = parseLlmToolCall(llmRaw, trimmed)
                 llmParseOk = resolved != null
 
                 val finalCall: ToolCallRouter.ResolvedToolCall = when {
                     resolved != null -> {
-                        // Check if guardrail corrected the model's choice
-                        val modelName = extractModelFunctionName(llmRaw)
+                        val modelName  = extractModelFunctionName(llmRaw)
                         guardrailFixed = modelName != null && modelName != resolved.functionName
                         resolved
                     }
-                    intent is ToolCallRouter.KnownIntent -> {
-                        // LLM failed JSON but classifier was confident — use classifier result
-                        android.util.Log.w("ChatViewModel", "LLM parse failed, using classifier fallback")
+                    intent is ToolCallRouter.KnownIntent ->
                         ToolCallRouter.ResolvedToolCall(intent.functionName, intent.arguments)
-                    }
                     intent is ToolCallRouter.LowConfidence -> {
-                        // LLM failed AND classifier was uncertain — ask for clarification
-                        finalAnswer = "I'm not sure what you mean. Could you rephrase?\n" +
-                                      "For example: \"today's collection\", \"show transactions\", or \"settlement status\"."
+                        finalAnswer = if (useHinglish)
+                            "Samajh nahi aaya — thoda aur batao?\nJaise: \"aaj ka collection\", \"transactions dikhao\"."
+                        else
+                            "I'm not sure what you mean. Could you rephrase?\nTry: \"today's collection\", \"show transactions\", or \"settlement status\"."
                         functionCalled = "CLARIFICATION"
                         setFinal(currentList, assistantMsg, finalAnswer, emptyList())
                         return@launch
@@ -189,23 +189,24 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // ── Step 4: Execute tool ──────────────────────────────────────────
+                // Step 5 — execute
                 functionCalled = finalCall.functionName
-                update(currentList, assistantMsg, "Fetching data…")
+                update(currentList, assistantMsg, if (useHinglish) "Data la raha hoon…" else "Fetching data…")
                 val funcResult = AppFunctions.executeFunction(finalCall.functionName, finalCall.arguments)
 
-                // Check for error JSON from AppFunctions
                 if (funcResult.contains("\"error\"")) {
-                    finalAnswer = "Couldn't fetch the data right now. Please try again in a moment."
+                    finalAnswer = if (useHinglish)
+                        "Abhi data nahi mil raha. Thodi der baad try karo."
+                    else
+                        "Couldn't fetch the data right now. Please try again in a moment."
                     errorStr = funcResult
                     setFinal(currentList, assistantMsg, finalAnswer, emptyList())
                     return@launch
                 }
 
-                // ── Step 5: Kotlin formatter — no 2nd LLM pass ───────────────────
-                finalAnswer = AppFunctions.formatAnswer(finalCall.functionName, funcResult)
+                // Step 6 — Kotlin formatter (no 2nd LLM pass)
+                finalAnswer = AppFunctions.formatAnswer(finalCall.functionName, funcResult, useHinglish)
 
-                // Update conversation context for follow-up questions
                 lastFunctionName   = finalCall.functionName
                 lastFunctionArgs   = finalCall.arguments
                 lastFunctionResult = funcResult
@@ -215,125 +216,89 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
             } catch (e: Exception) {
                 android.util.Log.e("ChatViewModel", "Error in sendMessage", e)
-                errorStr = e.message
+                errorStr    = e.message
                 finalAnswer = "Something went wrong. Please try again."
                 setFinal(currentList, assistantMsg, finalAnswer, emptyList())
             } finally {
-                val latency = System.currentTimeMillis() - startMs
-                ChatLogger.log(
-                    ChatLogger.TurnLog(
-                        userInput       = trimmed,
-                        classifierResult = classifierStr,
-                        llmCalled       = llmCalled,
-                        llmRawOutput    = llmRaw,
-                        llmParseOk      = llmParseOk,
-                        guardrailFixed  = guardrailFixed,
-                        functionCalled  = functionCalled,
-                        finalAnswer     = finalAnswer,
-                        latencyMs       = latency,
-                        modelVersion    = AIService.MODEL_VERSION,
-                        promptVersion   = AIService.PROMPT_VERSION,
-                        error           = errorStr
-                    )
-                )
+                ChatLogger.log(ChatLogger.TurnLog(
+                    userInput        = trimmed,
+                    classifierResult = classifierStr,
+                    llmCalled        = llmCalled,
+                    llmRawOutput     = llmRaw,
+                    llmParseOk       = llmParseOk,
+                    guardrailFixed   = guardrailFixed,
+                    functionCalled   = functionCalled,
+                    finalAnswer      = finalAnswer,
+                    latencyMs        = System.currentTimeMillis() - startMs,
+                    modelVersion     = AIService.MODEL_VERSION,
+                    promptVersion    = AIService.PROMPT_VERSION,
+                    error            = errorStr
+                ))
                 _isGenerating.value = false
             }
         }
     }
 
-    // ── Conversation context ──────────────────────────────────────────────────────
+    // ── Context helpers ───────────────────────────────────────────────────────────
 
-    /**
-     * If the user asks a follow-up like "which one failed?" or "show more",
-     * append the last function context so the classifier gets a richer signal.
-     */
     private fun resolveWithContext(q: String): String {
         if (lastFunctionName.isEmpty()) return q
-        val isFollowUp = isFollowUpQuery(q)
-        return if (isFollowUp)
-            "$q [context: previous query was $lastFunctionName with args $lastFunctionArgs]"
+        return if (isFollowUpQuery(q))
+            "$q [context: previous=$lastFunctionName args=$lastFunctionArgs]"
         else q
     }
 
     private fun buildContextHint(): String {
         if (lastFunctionName.isEmpty()) return ""
-        return "\n[Context: the previous query used $lastFunctionName, args=$lastFunctionArgs, result summary: ${lastFunctionResult.take(200)}]"
+        return "\n[Context: previous=$lastFunctionName, args=$lastFunctionArgs, result=${lastFunctionResult.take(200)}]"
     }
 
-    private fun isFollowUpQuery(q: String): Boolean {
-        val followUpSignals = listOf(
-            "which one", "show more", "what about", "and the",
-            "how about", "the failed", "the success", "that one",
-            "tell me more", "more details", "previous", "same"
-        )
-        return followUpSignals.any { q.lowercase().contains(it) }
-    }
+    private fun isFollowUpQuery(q: String) = listOf(
+        "which one", "show more", "what about", "and the", "how about",
+        "the failed", "the success", "that one", "tell me more", "more details", "previous", "same"
+    ).any { q.lowercase().contains(it) }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────────
+    // ── State helpers ─────────────────────────────────────────────────────────────
 
     private fun update(list: List<ChatMessage>, target: ChatMessage, text: String) {
         _messages.value = list.map { if (it.id == target.id) it.copy(text = text, isStreaming = true) else it }
     }
 
-    private fun setFinal(
-        list: List<ChatMessage>,
-        target: ChatMessage,
-        text: String,
-        chips: List<String>
-    ) {
+    private fun setFinal(list: List<ChatMessage>, target: ChatMessage, text: String, chips: List<String>) {
         _messages.value = list.map {
             if (it.id == target.id) it.copy(text = text, isStreaming = false, suggestedFollowUps = chips) else it
         }
         _isGenerating.value = false
     }
 
-    private fun ToolCallRouter.Intent.describe(): String = when (this) {
-        is ToolCallRouter.KnownIntent    -> "KnownIntent(${functionName},${arguments["dateRange"] ?: ""})"
-        is ToolCallRouter.LowConfidence  -> "LowConfidence(${likelyFunctionName})"
-        is ToolCallRouter.UnknownIntent  -> "UnknownIntent"
+    private fun ToolCallRouter.Intent.describe() = when (this) {
+        is ToolCallRouter.KnownIntent   -> "KnownIntent(${functionName},${arguments["dateRange"] ?: ""})"
+        is ToolCallRouter.LowConfidence -> "LowConfidence($likelyFunctionName)"
+        is ToolCallRouter.UnknownIntent -> "UnknownIntent"
     }
 
     private fun parseLlmToolCall(raw: String, userQuestion: String): ToolCallRouter.ResolvedToolCall? {
         var text = raw.trim()
-        if (text.startsWith("```")) {
-            text = text.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
-        }
-        val start = text.indexOf('{')
-        val end   = text.lastIndexOf('}')
+        if (text.startsWith("```")) text = text.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+        val start = text.indexOf('{'); val end = text.lastIndexOf('}')
         if (start == -1 || end == -1 || end <= start) return null
-
         return try {
-            val jsonStr = text.substring(start, end + 1)
-            val element = com.google.gson.JsonParser.parseString(jsonStr).asJsonObject
-            if (!element.has("type") || element.get("type").asString != "tool_call") return null
-
-            val modelFuncName = element.get("name")?.asString ?: return null
-            val argsElement   = element.get("arguments")
-            val modelArgsMap: Map<String, Any> = if (argsElement != null && argsElement.isJsonObject)
-                com.google.gson.Gson().fromJson(
-                    argsElement,
-                    object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
-                ) ?: emptyMap()
+            val el = com.google.gson.JsonParser.parseString(text.substring(start, end + 1)).asJsonObject
+            if (!el.has("type") || el.get("type").asString != "tool_call") return null
+            val modelFn   = el.get("name")?.asString ?: return null
+            val argsEl    = el.get("arguments")
+            val argsMap: Map<String, Any> = if (argsEl != null && argsEl.isJsonObject)
+                com.google.gson.Gson().fromJson(argsEl, object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type) ?: emptyMap()
             else emptyMap()
-
-            ToolCallRouter.resolve(
-                userQuestion        = userQuestion,
-                modelFunctionName   = modelFuncName,
-                modelArguments      = modelArgsMap
-            )
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun extractModelFunctionName(raw: String): String? {
-        return try {
-            val start = raw.indexOf('{'); val end = raw.lastIndexOf('}')
-            if (start == -1 || end <= start) return null
-            com.google.gson.JsonParser.parseString(raw.substring(start, end + 1))
-                .asJsonObject.get("name")?.asString
+            ToolCallRouter.resolve(userQuestion, modelFn, argsMap)
         } catch (e: Exception) { null }
     }
+
+    private fun extractModelFunctionName(raw: String): String? = try {
+        val s = raw.indexOf('{'); val e = raw.lastIndexOf('}')
+        if (s == -1 || e <= s) null
+        else com.google.gson.JsonParser.parseString(raw.substring(s, e + 1)).asJsonObject.get("name")?.asString
+    } catch (e: Exception) { null }
 
     override fun onCleared() {
         super.onCleared()

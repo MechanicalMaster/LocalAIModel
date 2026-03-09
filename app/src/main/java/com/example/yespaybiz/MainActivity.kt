@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
@@ -94,10 +95,18 @@ fun YesPayBizApp() {
                 AppDestinations.entries.forEach {
                     NavigationBarItem(
                         icon = {
-                            Icon(
-                                imageVector = it.icon,
-                                contentDescription = it.label
-                            )
+                            if (it.iconVector != null) {
+                                Icon(
+                                    imageVector = it.iconVector,
+                                    contentDescription = it.label
+                                )
+                            } else if (it.iconResId != null) {
+                                Icon(
+                                    painter = androidx.compose.ui.res.painterResource(id = it.iconResId),
+                                    contentDescription = it.label,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         },
                         label = { 
                             Text(
@@ -133,11 +142,12 @@ fun YesPayBizApp() {
 
 enum class AppDestinations(
     val label: String,
-    val icon: ImageVector,
+    val iconVector: ImageVector? = null,
+    val iconResId: Int? = null
 ) {
-    HOME("Home", Icons.Default.Home),
-    TRANSACTIONS("Transactions", Icons.Default.List),
-    SHOW_QR("Show QR", Icons.Default.QrCode),
-    SETTLEMENT("Settlement", Icons.Default.AccountBalanceWallet),
-    AI_CHAT("AI Chat", Icons.Default.SmartToy),
+    HOME("Home", iconVector = Icons.Default.Home),
+    TRANSACTIONS("Transactions", iconVector = Icons.Default.List),
+    SHOW_QR("Show QR", iconVector = Icons.Default.QrCode),
+    SETTLEMENT("Settlement", iconVector = Icons.Default.AccountBalanceWallet),
+    AI_CHAT("Insights", iconResId = R.drawable.ic_insights),
 }

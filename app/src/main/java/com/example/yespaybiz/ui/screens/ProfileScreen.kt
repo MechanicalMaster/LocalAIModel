@@ -3,6 +3,7 @@ package com.example.yespaybiz.ui.screens
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +25,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import com.example.yespaybiz.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -230,13 +233,12 @@ private fun ProfileHeader(onBackClick: () -> Unit) {
                 Surface(
                     modifier = Modifier.size(56.dp),
                     shape = CircleShape,
-                    color = Color(0xFF2A5CAE)
+                    color = Color.White
                 ) {
-                    Icon(
-                        Icons.Default.Store,
+                    Image(
+                        painter = painterResource(id = R.mipmap.ic_launcher),
                         contentDescription = "Merchant",
-                        tint = Color.White,
-                        modifier = Modifier.padding(14.dp)
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
                 Spacer(modifier = Modifier.width(20.dp))
