@@ -183,11 +183,14 @@ private fun ChatHeader(modelState: AIService.ModelState) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .height(64.dp)
             .background(Brush.horizontalGradient(listOf(Color(0xFF234E91), Color(0xFF2A7DC0))))
-            .statusBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 6.dp)
+            .padding(horizontal = 20.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Column {
                 Text("AI Assistant", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color.White)
                 Text(
