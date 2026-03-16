@@ -4,10 +4,14 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
@@ -72,53 +76,62 @@ fun YesPayBizApp() {
         }
     }
 
+    // Hide bottom nav when keyboard is open on AI Chat to prevent white gap
+    val density = LocalDensity.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
+    val isKeyboardOpen = imeBottom > 0
+    val hideBottomNav = isKeyboardOpen && currentDestination == AppDestinations.AI_CHAT
+
     Scaffold(
+        contentWindowInsets = if (hideBottomNav) WindowInsets.ime else ScaffoldDefaults.contentWindowInsets,
         bottomBar = {
-            NavigationBar(
-                containerColor = Color.White,
-                tonalElevation = 0.dp,
-                modifier = Modifier
-                    .height(63.dp)
-                    .shadow(
-                        elevation = 15.dp,
-                        spotColor = Color(0x26000000),
-                        ambientColor = Color(0x26000000)
+            if (!hideBottomNav) {
+                NavigationBar(
+                    containerColor = Color.White,
+                    tonalElevation = 0.dp,
+                    modifier = Modifier
+                        .height(63.dp)
+                        .shadow(
+                            elevation = 15.dp,
+                            spotColor = Color(0x26000000),
+                            ambientColor = Color(0x26000000)
+                        )
+                ) {
+                    val itemColors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = com.example.yespaybiz.ui.theme.NavBarSelectedIcon,
+                        selectedTextColor = com.example.yespaybiz.ui.theme.NavBarSelectedText,
+                        unselectedIconColor = com.example.yespaybiz.ui.theme.TextGray,
+                        unselectedTextColor = com.example.yespaybiz.ui.theme.TextGray,
+                        indicatorColor = Color.Transparent
                     )
-            ) {
-                val itemColors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = com.example.yespaybiz.ui.theme.NavBarSelectedIcon,
-                    selectedTextColor = com.example.yespaybiz.ui.theme.NavBarSelectedText,
-                    unselectedIconColor = com.example.yespaybiz.ui.theme.TextGray,
-                    unselectedTextColor = com.example.yespaybiz.ui.theme.TextGray,
-                    indicatorColor = Color.Transparent
-                )
-                AppDestinations.entries.forEach {
-                    NavigationBarItem(
-                        icon = {
-                            if (it.iconVector != null) {
-                                Icon(
-                                    imageVector = it.iconVector,
-                                    contentDescription = it.label
+                    AppDestinations.entries.forEach {
+                        NavigationBarItem(
+                            icon = {
+                                if (it.iconVector != null) {
+                                    Icon(
+                                        imageVector = it.iconVector,
+                                        contentDescription = it.label
+                                    )
+                                } else if (it.iconResId != null) {
+                                    Icon(
+                                        painter = androidx.compose.ui.res.painterResource(id = it.iconResId),
+                                        contentDescription = it.label,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            },
+                            label = {
+                                Text(
+                                    text = it.label,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (it == currentDestination) FontWeight.Bold else FontWeight.Normal
                                 )
-                            } else if (it.iconResId != null) {
-                                Icon(
-                                    painter = androidx.compose.ui.res.painterResource(id = it.iconResId),
-                                    contentDescription = it.label,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                        },
-                        label = { 
-                            Text(
-                                text = it.label,
-                                fontSize = 11.sp,
-                                fontWeight = if (it == currentDestination) FontWeight.Bold else FontWeight.Normal
-                            ) 
-                        },
-                        selected = it == currentDestination,
-                        onClick = { currentDestination = it },
-                        colors = itemColors
-                    )
+                            },
+                            selected = it == currentDestination,
+                            onClick = { currentDestination = it },
+                            colors = itemColors
+                        )
+                    }
                 }
             }
         }
