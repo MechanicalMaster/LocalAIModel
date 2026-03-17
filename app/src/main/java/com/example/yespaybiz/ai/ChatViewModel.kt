@@ -135,9 +135,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (intent is ToolCallRouter.UnknownIntent) {
                     finalAnswer = if (useHinglish)
-                        "Mujhe sirf YesPayBiz business data ke baare mein puchho.\nJaise: \"aaj ka collection\", \"transactions dikhao\", ya \"settlement kab aayega\"."
+                        "Mujhe sirf AI Biz business data ke baare mein puchho.\nJaise: \"aaj ka collection\", \"transactions dikhao\", ya \"settlement kab aayega\"."
                     else
-                        "I can only help with your YesPayBiz business data.\nTry: collections, transactions, settlement, holds, or disputes."
+                        "I can only help with your AI Biz business data.\nTry: collections, transactions, settlement, holds, or disputes."
                     functionCalled = "REFUSED"
                     setFinal(currentList, assistantMsg, finalAnswer, emptyList())
                     return@launch
